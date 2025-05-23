@@ -1,126 +1,99 @@
 import os
 import json
+import tempfile
 import sounddevice as sd
 from pathlib import Path
 
-CONFIG_FILE = "config.json"
+TEMP_DIR = Path(tempfile.gettempdir()) / "kos_zbot"
+CONFIG_FILE = TEMP_DIR / "config.json"
+
 DEFAULT_CONFIG = {
     "microphone_id": 1,
     "speaker_id": 2,
     "volume": 0.35,
-    "debug": False,
     "environment": "default",
 }
 
 
-def get_available_microphones():
-    """Get a list of available microphone devices.
-
-    Returns:
-        list: List of dicts containing device info with 'id', 'name', and 'channels'
-    """
-    devices = []
+def get_available_devices():
     device_list = sd.query_devices()
+    microphones = []
+    speakers = []
 
     for i, device in enumerate(device_list):
+        device_info = {
+            "id": i,
+            "name": device["name"],
+            "channels": device["max_input_channels"] if device["max_input_channels"] > 0 else device["max_output_channels"]
+        }
+        
         if device["max_input_channels"] > 0:
-            devices.append(
-                {
-                    "id": i,
-                    "name": device["name"],
-                    "channels": device["max_input_channels"],
-                }
-            )
-
-    return devices
-
-
-def get_available_speakers():
-    """Get a list of available speaker devices.
-
-    Returns:
-        list: List of dicts containing device info with 'id', 'name', and 'channels'
-    """
-    devices = []
-    device_list = sd.query_devices()
-
-    for i, device in enumerate(device_list):
+            microphones.append(device_info)
         if device["max_output_channels"] > 0:
-            devices.append(
-                {
-                    "id": i,
-                    "name": device["name"],
-                    "channels": device["max_output_channels"],
-                }
-            )
+            speakers.append(device_info)
 
-    return devices
+    return microphones, speakers
 
 
-def select_default_device(devices, device_type):
-    """Select a default device based on available devices.
-
-    Args:
-        devices (list): List of available devices
-        device_type (str): Type of device ('microphone' or 'speaker')
-
-    Returns:
-        int or None: Device ID or None if no devices available
-    """
+def prompt_device_selection(devices, device_type):
     if not devices:
+        print(f"No {device_type}s found!")
         return None
 
-    if device_type == "microphone":
-        for device in devices:
-            if "default" in device["name"].lower():
-                return device["id"]
-
-    if device_type == "speaker":
-        for device in devices:
-            if "default" in device["name"].lower():
-                return device["id"]
-
-    return devices[0]["id"]
+    print(f"\nAvailable {device_type}s:")
+    print("-" * 50)
+    for device in devices:
+        print(f"{device['id']:2d}: {device['name']} (channels: {device['channels']})")
+    
+    while True:
+        try:
+            choice = input(f"\nSelect {device_type} ID: ").strip()
+            device_id = int(choice)
+            
+            valid_ids = [device['id'] for device in devices]
+            if device_id in valid_ids:
+                selected_device = next(d for d in devices if d['id'] == device_id)
+                print(f"Selected {device_type}: {selected_device['name']}")
+                return device_id
+            else:
+                print(f"Invalid choice. Please select from available IDs.")
+                
+        except ValueError:
+            print("Please enter a valid number.")
+        except KeyboardInterrupt:
+            print(f"\nUsing first available {device_type} (ID: {devices[0]['id']})")
+            return devices[0]['id']
 
 
 def create_config():
-    """Create a new configuration file with default values.
-
-    Returns:
-        dict: The newly created configuration
-    """
+    print("=== KOS ZBot Configuration Setup ===")
+    print("Setting up your audio configuration...")
+    
+    TEMP_DIR.mkdir(exist_ok=True)
+    
     config = DEFAULT_CONFIG.copy()
+    microphones, speakers = get_available_devices()
 
-    microphones = get_available_microphones()
-    speakers = get_available_speakers()
-
-    config["microphone_id"] = select_default_device(microphones, "microphone")
-    config["speaker_id"] = select_default_device(speakers, "speaker")
+    config["microphone_id"] = prompt_device_selection(microphones, "microphone")
+    config["speaker_id"] = prompt_device_selection(speakers, "speaker")
 
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=4)
 
-    print(f"Created configuration file: {CONFIG_FILE}")
-    print(f"Selected microphone: {config['microphone_id']}")
-    print(f"Selected speaker: {config['speaker_id']}")
-
+    print(f"\n✓ Configuration saved to: {CONFIG_FILE}")
+    print("=" * 40)
     return config
 
 
 def load_config():
-    """Load configuration from file or create default if it doesn't exist.
-
-    Returns:
-        dict: Configuration values
-    """
-    config_path = Path(CONFIG_FILE)
-
-    if not config_path.exists():
-        print(f"Configuration file not found. Creating new config.")
+    TEMP_DIR.mkdir(exist_ok=True)
+    
+    if not CONFIG_FILE.exists():
+        print("Configuration not found. Setting up for first time...")
         return create_config()
 
     try:
-        with open(config_path, "r") as f:
+        with open(CONFIG_FILE, "r") as f:
             config = json.load(f)
 
         for key in DEFAULT_CONFIG:
@@ -131,33 +104,66 @@ def load_config():
 
     except Exception as e:
         print(f"Error loading configuration: {e}")
-        print("Creating new configuration file.")
+        print("Creating new configuration...")
         return create_config()
 
 
-def save_config(config):
-    """Save configuration to file.
+def update_config():
+    print("=== Update KOS ZBot Configuration ===")
+    
+    current_config = load_config()
+    print(f"Current configuration loaded from: {CONFIG_FILE}\n")
+    
+    microphones, speakers = get_available_devices()
 
-    Args:
-        config (dict): Configuration to save
-    """
+    print(f"Current microphone ID: {current_config.get('microphone_id', 'Not set')}")
+    new_mic = prompt_device_selection(microphones, "microphone")
+    if new_mic is not None:
+        current_config["microphone_id"] = new_mic
+
+    print(f"\nCurrent speaker ID: {current_config.get('speaker_id', 'Not set')}")
+    new_speaker = prompt_device_selection(speakers, "speaker")
+    if new_speaker is not None:
+        current_config["speaker_id"] = new_speaker
+
     with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=4)
+        json.dump(current_config, f, indent=4)
+    
+    print(f"\n✓ Configuration updated and saved to: {CONFIG_FILE}")
+    return current_config
 
-    print(f"Configuration saved to {CONFIG_FILE}")
 
-
-def get_config():
-    """Get the current configuration or create if needed.
-
-    Returns:
-        dict: The current configuration
-    """
-    return load_config()
+def show_config():
+    config = load_config()
+    
+    print("=== Current KOS ZBot Configuration ===")
+    print(f"Config file: {CONFIG_FILE}")
+    print("-" * 40)
+    print(f"Microphone ID: {config.get('microphone_id', 'Not set')}")
+    print(f"Speaker ID: {config.get('speaker_id', 'Not set')}")
+    print(f"Volume: {config.get('volume', 'Not set')}")
+    print(f"Environment: {config.get('environment', 'Not set')}")
+    print("=" * 40)
 
 
 if __name__ == "__main__":
-    config = create_config()
-    print(
-        "Configuration created. You can edit the config.json file to change settings."
-    )
+    import sys
+
+    if len(sys.argv) > 1:
+        command = sys.argv[1].lower()
+
+        if command == "show":
+            show_config()
+        elif command == "update":
+            update_config()
+        elif command == "create":
+            create_config()
+        else:
+            print("Usage: python config.py [show|update|create]")
+            print("  show   - Display current configuration")
+            print("  update - Update existing configuration") 
+            print("  create - Create new configuration")
+    else:
+        config = load_config()
+        print("Configuration loaded successfully!")
+        show_config()

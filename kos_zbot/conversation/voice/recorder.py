@@ -1,5 +1,3 @@
-import os
-import io
 import time
 import asyncio
 import sounddevice as sd
@@ -26,18 +24,10 @@ class AudioRecorder(AsyncIOEventEmitter):
         - audio_captured: When audio is captured, with the audio data
     """
 
-    def __init__(self, microphone_id=None, debug=False):
-        """Initialize the AudioRecorder.
-
-        Args:
-            microphone_id (str, optional): Specific microphone device ID. Defaults to None.
-            debug (bool, optional): Enable debug mode. Defaults to False.
-        """
+    def __init__(self, microphone_id=None):
         super().__init__()
         self.microphone_id = microphone_id
         self.should_record = asyncio.Event()
-        self.debug = debug
-        self.debug_mic_buffer = io.BytesIO() if debug else None
         self.input_sample_rate = SAMPLE_RATE
 
         self.audio_thread_pool = concurrent.futures.ThreadPoolExecutor(
@@ -45,12 +35,10 @@ class AudioRecorder(AsyncIOEventEmitter):
         )
 
     async def start(self):
-        """Start the audio recorder in a separate thread."""
         self._main_loop = asyncio.get_running_loop()
         asyncio.create_task(self._start_recording())
 
     async def _start_recording(self):
-        """Start the audio recording thread."""
         try:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
@@ -60,12 +48,8 @@ class AudioRecorder(AsyncIOEventEmitter):
             print(f"Error in mic audio capture: {e}")
 
     def _capture_audio(self):
-        """Audio capture function running in separate thread."""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
-        devices = sd.query_devices()
-        input_devices = [d for d in devices if d["max_input_channels"] > 0]
 
         device = self.microphone_id
         try:
@@ -124,11 +108,6 @@ class AudioRecorder(AsyncIOEventEmitter):
             stream.close()
 
     async def _process_captured_audio(self, data):
-        """Process captured audio data and emit event.
-
-        Args:
-            data (numpy.ndarray): Raw audio data from microphone
-        """
         raw_bytes = data.tobytes()
 
         if self.input_sample_rate != SAMPLE_RATE:
@@ -143,23 +122,17 @@ class AudioRecorder(AsyncIOEventEmitter):
         else:
             audio_bytes = raw_bytes
 
-        if self.debug and self.debug_mic_buffer is not None:
-            self.debug_mic_buffer.write(audio_bytes)
-
         self.emit(
             "audio_captured",
             {"audio_bytes": audio_bytes, "sample_rate": SAMPLE_RATE},
         )
 
     def start_recording(self):
-        """Start recording audio from microphone."""
         self.should_record.set()
 
     def stop_recording(self):
-        """Stop recording audio from microphone."""
         self.should_record.clear()
 
     def close(self):
-        """Close the audio recorder and release resources."""
         self.stop_recording()
         self.audio_thread_pool.shutdown()
