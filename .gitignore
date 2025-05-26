@@ -84,3 +84,4 @@ cython_debug/
 .DS_Store
 Thumbs.db
 __pycache__/
+config.json
