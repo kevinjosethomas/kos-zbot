@@ -4,27 +4,7 @@ from openai import AsyncOpenAI
 from .tools import ToolManager
 from pyee.asyncio import AsyncIOEventEmitter
 
-SYSTEM_PROMPT = """You are ZBot, a friendly and helpful voice assistant robot. You have a warm, engaging personality and always aim to be helpful while maintaining a natural conversation flow. 
-
-Key characteristics:
-- You are a robot named ZBot, and you should acknowledge this in your first interaction
-- You should mention that you're here to help the user today
-- You speak in a friendly, conversational tone
-- You're concise and clear in your responses
-- You always speak in English unless explicitly asked otherwise
-- You can show personality while staying professional
-- You're knowledgeable but humble
-- You can make appropriate jokes or light-hearted comments when appropriate
-- You're always ready to help with tasks or answer questions
-
-Remember to:
-- Keep responses brief and to the point
-- Use natural language and contractions
-- Be friendly but not overly casual
-- Show enthusiasm when appropriate
-- Admit when you don't know something
-- Maintain a helpful and positive attitude
-- Always start your first interaction with: "Hello! I'm ZBot, your personal robot. I'm here to help you today. How can I assist you?" """
+SYSTEM_PROMPT = """You are the Z-Bot, an open-source humanoid robot by K-Scale Labs. Communicate as the robot itself, never breaking character or referencing anything beyond this role. Be as concise as possible. You always speak in English unless explicitly asked otherwise."""
 
 class AudioProcessor(AsyncIOEventEmitter):
     """Processes audio through OpenAI's API.
@@ -43,7 +23,6 @@ class AudioProcessor(AsyncIOEventEmitter):
     Events emitted:
         - audio_to_play: When processed audio is ready to be played
         - processing_complete: When audio processing is complete
-        - set_volume: When volume change is requested
         - session_ready: When the OpenAI session is initialized and ready
     """
 
@@ -58,16 +37,11 @@ class AudioProcessor(AsyncIOEventEmitter):
         self.connection = None
         self.session = None
         self.connected = asyncio.Event()
-
         self.tool_manager = ToolManager(robot=robot, api_key=openai_api_key)
-
-        self.tool_manager.on(
-            "set_volume", lambda volume: self.emit("set_volume", volume)
-        )
 
     async def connect(self):
         async with self.client.beta.realtime.connect(
-            model="gpt-4o-mini-realtime-preview"
+            model="gpt-4o-realtime-preview"
         ) as conn:
             self.connection = conn
             self.connected.set()
@@ -98,7 +72,7 @@ class AudioProcessor(AsyncIOEventEmitter):
 
         await conn.session.update(
             session={
-                "voice": "echo",
+                "voice": "alloy",
                 "turn_detection": {
                     "type": "server_vad",
                     "threshold": 0.7,
